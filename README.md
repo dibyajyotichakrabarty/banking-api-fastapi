@@ -21,3 +21,7 @@ git clone https://github.com/dibyajyotichakrabarty/banking-api-fastapi.git
 cd banking-api-fastapi
 pip install -r requirements.txt
 uvicorn main:app --reload
+
+
+### **Connect**
+LinkedIn: https://www.linkedin.com/in/dibyajyoti-chakrabarty-570637406
