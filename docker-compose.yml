@@ -1,9 +1,33 @@
 version: '3.8'
+
 services:
   db:
     image: mysql:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: rootpass
       MYSQL_DATABASE: banking_db
+      MYSQL_USER: bankuser
+      MYSQL_PASSWORD: bankpass
     ports:
       - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+pymysql://bankuser:bankpass@db:3306/banking_db
+      JWT_SECRET: change_this_in_prod
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
