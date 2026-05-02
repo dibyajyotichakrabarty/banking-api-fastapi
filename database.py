@@ -1,21 +1,21 @@
-import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import os
+from dotenv import load_dotenv
 
-# Render se DATABASE_URL environment variable lega
+load_dotenv()
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Engine - connection pool manager
+# Render Postgres needs this fix
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 engine = create_engine(DATABASE_URL)
-
-# Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Base class for models
 Base = declarative_base()
 
-# FastAPI Dependency
 def get_db():
     db = SessionLocal()
     try:
