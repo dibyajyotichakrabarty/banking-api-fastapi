@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NexusPay</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+<style>
+body {
+  background: #000;
+  overflow-x: hidden;
+  font-family: 'Poppins', sans-serif;
+}
+
+/* FIXED BACKGROUND (no scroll bug) */
+.bg-orb {
+  position: fixed;
+  width: 400px;
+  height: 400px;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+.orb1 { top: 0; left: 20%; background: #8b5cf6; }
+.orb2 { bottom: 0; right: 20%; background: #ec4899; }
+
+/* GLASS */
+.glass {
+  backdrop-filter: blur(20px);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* CARD */
+.card {
+  transition: 0.3s;
+}
+.card:hover {
+  transform: translateY(-5px);
+}
+
+/* BUTTON */
+.btn {
+  background: linear-gradient(135deg,#8b5cf6,#ec4899);
+}
+
+/* SHIMMER */
+.shimmer {
+  animation: shimmer 2s infinite;
+}
+@keyframes shimmer {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+</style>
+</head>
+
+<body class="text-white">
+
+<!-- BACKGROUND -->
+<div class="bg-orb orb1"></div>
+<div class="bg-orb orb2"></div>
+
+<div class="max-w-md mx-auto p-5">
+
+<!-- LOGIN -->
+<div id="login" class="mt-20 space-y-4">
+  <h1 class="text-4xl font-bold text-center mb-6">NexusPay</h1>
+
+  <input id="acc" placeholder="Account Number" class="glass w-full p-4 rounded-xl outline-none">
+  <input id="pwd" type="password" placeholder="Password" class="glass w-full p-4 rounded-xl outline-none">
+
+  <button onclick="login()" class="btn w-full p-4 rounded-xl font-bold">
+    Login
+  </button>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dash" class="hidden space-y-6">
+
+  <!-- HEADER -->
+  <div class="flex justify-between items-center">
+    <div>
+      <p class="text-sm opacity-60">WELCOME</p>
+      <h2 id="user" class="font-bold text-xl"></h2>
+    </div>
+    <button onclick="logout()">⎋</button>
+  </div>
+
+  <!-- BALANCE -->
+  <div class="glass p-6 rounded-2xl card">
+    <p class="opacity-60">BALANCE</p>
+    <h1 class="text-4xl font-bold">₹<span id="bal">0.00</span></h1>
+
+    <button onclick="refresh()" class="mt-3 text-sm opacity-60">
+      Refresh ⟳
+    </button>
+  </div>
+
+  <!-- CHART -->
+  <div class="glass p-4 rounded-2xl">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <!-- TRANSACTIONS -->
+  <div>
+    <h3 class="mb-2 font-bold">Transactions</h3>
+    <div id="txns" class="space-y-2"></div>
+  </div>
+
+</div>
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+let accNo = '';
+let chart = null;
+
+/* LOGIN */
+function login(){
+  accNo = document.getElementById('acc').value || '123';
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('dash').classList.remove('hidden');
+  document.getElementById('user').innerText = accNo;
+
+  loadAll();
+}
+
+/* LOAD ALL */
+function loadAll(){
+  loadBalance();
+  loadHistory();
+  loadChart();
+}
+
+/* BALANCE */
+async function loadBalance(){
+  const el = document.getElementById('bal');
+  el.classList.add('shimmer');
+
+  try{
+    const res = await fetch(API + '/balance/' + accNo);
+    if(!res.ok) throw new Error();
+
+    const data = await res.json();
+    const val = parseFloat(data.balance) || 0;
+
+    el.innerText = val.toFixed(2);
+
+  }catch(e){
+    console.error(e);
+    el.innerText = "0.00";
+  }
+
+  el.classList.remove('shimmer');
+}
+
+/* HISTORY */
+async function loadHistory(){
+  try{
+    const res = await fetch(API + '/history/' + accNo);
+    if(!res.ok) throw new Error();
+
+    const data = await res.json();
+
+    document.getElementById('txns').innerHTML =
+      data.slice(0,5).map(t=>{
+        const amt = parseFloat(t.amount) || 0;
+        return `<div class="glass p-3 rounded-xl flex justify-between">
+          <span>${t.type}</span>
+          <span>₹${amt}</span>
+        </div>`;
+      }).join('');
+
+  }catch(e){
+    console.error(e);
+    document.getElementById('txns').innerHTML = "No data";
+  }
+}
+
+/* CHART */
+function loadChart(){
+  const ctx = document.getElementById('chart');
+  if(!ctx) return;
+
+  if(chart) chart.destroy();
+
+  chart = new Chart(ctx,{
+    type:'line',
+    data:{
+      labels:[1,2,3,4,5],
+      datasets:[{
+        data:[10,20,15,30,25],
+        borderColor:'#8b5cf6',
+        tension:0.4
+      }]
+    },
+    options:{plugins:{legend:{display:false}}}
+  });
+}
+
+/* REFRESH */
+function refresh(){
+  loadAll();
+}
+
+/* LOGOUT */
+function logout(){
+  location.reload();
+}
+</script>
+
+</body>
+</html>
+

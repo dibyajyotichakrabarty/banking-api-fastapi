@@ -1,79 +1,185 @@
-from fastapi import FastAPI, HTTPException, Depends, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordRequestForm
-from models import AccountCreate, TransactionRequest, TransferRequest, Token, HistoryItem
-from bank import BankService
-from auth import create_access_token, get_current_user
+from fastapi import FastAPI, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from pydantic import BaseModel
 from typing import List
+from datetime import datetime, timedelta
+from jose import jwt
+from passlib.context import CryptContext
 
-app = FastAPI(title="Bank API")
+from database import engine, get_db
+from models import Base, Account, Transaction
+from auth import get_current_user, get_current_admin_user, SECRET_KEY, ALGORITHM
+from bank import create_bank_routes
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Create tables
+Base.metadata.create_all(bind=engine)
 
-def get_bank_service():
-    return BankService()
+app = FastAPI(title="Mini Banking API", version="L9")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-@app.post("/create-account", status_code=201)
-def create_account(data: AccountCreate, bank: BankService = Depends(get_bank_service)):
-    try:
-        return bank.create_account(data.account_number, data.password, data.email)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+# ------------------- SCHEMAS -------------------
+class SignupRequest(BaseModel):
+    username: str
+    password: str
+    account_number: str
+    initial_balance: float = 0.0
 
-@app.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), bank: BankService = Depends(get_bank_service)):
-    try:
-        bank.login(int(form_data.username), form_data.password)
-        access_token = create_access_token(data={"sub": form_data.username})
-        return {"access_token": access_token, "token_type": "bearer"}
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
-@app.post("/deposit")
-def deposit(data: TransactionRequest, current_user: int = Depends(get_current_user), bank: BankService = Depends(get_bank_service)):
-    if current_user!= data.account_number:
-        raise HTTPException(status_code=403, detail="Not authorized for this account")
-    try:
-        return bank.deposit(data.account_number, data.amount)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
 
-@app.post("/withdraw")
-def withdraw(data: TransactionRequest, current_user: int = Depends(get_current_user), bank: BankService = Depends(get_bank_service)):
-    if current_user!= data.account_number:
-        raise HTTPException(status_code=403, detail="Not authorized for this account")
-    try:
-        return bank.withdraw(data.account_number, data.amount)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    account_number: str
+    balance: float
+    role: str
+    
+    class Config:
+        from_attributes = True
 
-@app.post("/transfer")
-def transfer(data: TransferRequest, current_user: int = Depends(get_current_user), bank: BankService = Depends(get_bank_service)):
-    if current_user!= data.from_acc:
-        raise HTTPException(status_code=403, detail="Not authorized for this account")
-    try:
-        return bank.transfer(data.from_acc, data.to_acc, data.amount)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+class TransactionResponse(BaseModel):
+    id: int
+    from_account: str
+    to_account: str
+    amount: float
+    type: str
+    timestamp: datetime
+    
+    class Config:
+        from_attributes = True
 
-@app.get("/balance/{acc_no}")
-def balance(acc_no: int, current_user: int = Depends(get_current_user), bank: BankService = Depends(get_bank_service)):
-    if current_user!= acc_no:
-        raise HTTPException(status_code=403, detail="Not authorized for this account")
-    try:
-        bal = bank.get_balance(acc_no)
-        return {"account_number": acc_no, "balance": bal}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+class AdminUserResponse(BaseModel):
+    id: int
+    username: str
+    account_number: str
+    balance: float
+    role: str
+    
+    class Config:
+        from_attributes = True
 
-@app.get("/history/{acc_no}", response_model=List[HistoryItem])
-def history(acc_no: int, current_user: int = Depends(get_current_user), bank: BankService = Depends(get_bank_service)):
-    if current_user!= acc_no:
-        raise HTTPException(status_code=403, detail="Not authorized for this account")
-    return bank.show_history(acc_no)
+class AdminStatsResponse(BaseModel):
+    total_users: int
+    total_transactions: int
+    total_money_in_system: float
+
+# ------------------- UTILS -------------------
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(hours=1)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+# ------------------- L1: ROOT -------------------
+@app.get("/", tags=["L1 - Root"])
+def read_root():
+    return {"message": "Welcome to Mini Banking API L9"}
+
+# ------------------- L2: SIGNUP -------------------
+@app.post("/signup", status_code=201, tags=["L2 - Auth"])
+def signup(user_data: SignupRequest, db: Session = Depends(get_db)):
+    if db.query(Account).filter(Account.username == user_data.username).first():
+        raise HTTPException(status_code=400, detail="Username already exists")
+    if db.query(Account).filter(Account.account_number == user_data.account_number).first():
+        raise HTTPException(status_code=400, detail="Account number already exists")
+    
+    hashed_pw = get_password_hash(user_data.password)
+    new_user = Account(
+        username=user_data.username,
+        hashed_password=hashed_pw,
+        account_number=user_data.account_number,
+        balance=user_data.initial_balance,
+        role="user"
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return {"message": "User created successfully", "username": new_user.username}
+
+# ------------------- L3: LOGIN -------------------
+@app.post("/login", response_model=TokenResponse, tags=["L3 - Auth"])
+def login(login_data: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(Account).filter(Account.username == login_data.username).first()
+    if not user or not verify_password(login_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    access_token = create_access_token(data={"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+# ------------------- L5: CURRENT USER -------------------
+@app.get("/users/me", response_model=UserResponse, tags=["L5 - Auth"])
+def read_users_me(current_user: Account = Depends(get_current_user)):
+    return current_user
+
+# ------------------- L8: TRANSACTIONS -------------------
+@app.get("/transactions", response_model=List[TransactionResponse], tags=["L8 - Transactions"])
+def get_user_transactions(
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: Account = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    L8: User ki transaction history - newest first
+    """
+    transactions = db.query(Transaction).filter(
+        (Transaction.from_account == current_user.account_number) | 
+        (Transaction.to_account == current_user.account_number)
+    ).order_by(Transaction.timestamp.desc()).offset(offset).limit(limit).all()
+    
+    return transactions
+
+# ------------------- L9: ADMIN PANEL -------------------
+@app.get("/admin/users", response_model=List[AdminUserResponse], tags=["L9 - Admin"])
+def get_all_users(
+    admin: Account = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    L9: Saare users - Admin only
+    """
+    return db.query(Account).all()
+
+@app.get("/admin/transactions", response_model=List[TransactionResponse], tags=["L9 - Admin"])
+def get_all_transactions(
+    limit: int = Query(50, ge=1, le=200),
+    admin: Account = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    L9: System ki saari transactions - Admin only
+    """
+    return db.query(Transaction).order_by(Transaction.timestamp.desc()).limit(limit).all()
+
+@app.get("/admin/stats", response_model=AdminStatsResponse, tags=["L9 - Admin"])
+def get_system_stats(
+    admin: Account = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    L9: System statistics - Admin only
+    """
+    total_users = db.query(Account).count()
+    total_transactions = db.query(Transaction).count()
+    total_money = db.query(func.sum(Account.balance)).scalar() or 0.0
+    
+    return {
+        "total_users": total_users,
+        "total_transactions": total_transactions,
+        "total_money_in_system": total_money
+    }
+
+# ------------------- L6: BANKING ROUTES -------------------
+create_bank_routes(app)
