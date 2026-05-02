@@ -9,3 +9,4 @@ python-jose[cryptography]
 python-multipart
 passlib[bcrypt]
 cryptography
+psycopg2-binary==2.9.9
