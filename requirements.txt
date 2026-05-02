@@ -1,12 +1,6 @@
 fastapi
-uvicorn[standard]
+uvicorn
 sqlalchemy
-mysql-connector-python==8.3.0
-python-dotenv==1.0.1
-email-validator
-bcrypt
-python-jose[cryptography]
-python-multipart
-passlib[bcrypt]
-cryptography
 psycopg2-binary==2.9.9
+python-dotenv
+pydantic
