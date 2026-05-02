@@ -1,16 +1,13 @@
+import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
-# Tera actual MySQL connection string
-SQLALCHEMY_DATABASE_URL = "mysql+pymysql://root:pritam01@localhost/banking_db"
+# Render se DATABASE_URL environment variable lega
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Engine - connection pool manager
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-    echo=False  # True kar de agar SQL queries terminal me dekhni hain
-)
+engine = create_engine(DATABASE_URL)
 
 # Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
