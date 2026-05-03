@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from jose import jwt
 from passlib.context import CryptContext
 
-from database import engine, get_db
+from app.database import engine
 from models import Base, Account, Transaction
 from auth import get_current_user, get_current_admin_user, SECRET_KEY, ALGORITHM
 from bank import create_bank_routes
