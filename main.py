@@ -7,16 +7,17 @@ from datetime import datetime, timedelta
 from jose import jwt
 from passlib.context import CryptContext
 
-from app.database import engine, get_db   # ✅ FIXED (added get_db)
-from models import Base, Account, Transaction
-from auth import get_current_user, get_current_admin_user, SECRET_KEY, ALGORITHM
-from bank import create_bank_routes
+from app.database import engine, get_db
+from app.models import Base, Account, Transaction   # ✅ FIXED
+from app.auth import get_current_user, get_current_admin_user, SECRET_KEY, ALGORITHM  # ✅ FIXED
+from app.bank import create_bank_routes   # ✅ FIXED
 
-# Create tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Mini Banking API", version="L9")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# (rest of your code unchanged)
 
 # ------------------- SCHEMAS -------------------
 class SignupRequest(BaseModel):
